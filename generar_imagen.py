@@ -38,8 +38,8 @@ MAX_IMAGENES_INPUT = 8  # límite de la API
 RAIZ = Path(__file__).resolve().parent
 
 # Referencias de identidad: pocas y neutras (las primeras pesan más)
-REFS_PREFERIDAS = ["ref-aprobada-sofa-blazer", "ref-pro-primer-plano", "ref-pro-mano-menton", "ref-pro-cabeza-inclinada"]
-MAX_REFS_IDENTIDAD = 4
+REFS_PREFERIDAS = ["ref-pro-mano-menton", "ref-pro-cabeza-inclinada", "ref-pro-mano-mejilla-luz", "ref-pro-primer-plano", "ref-aprobada-sueter-crema", "ref-aprobada-sofa-blazer", "ref-crema-sonrisa"]
+MAX_REFS_IDENTIDAD = 7
 
 # Bloque 1 (identidad) y bloque 7 (restricciones) fijos; los bloques 2-6 los da el prompt.
 INSTRUCCION_IDENTIDAD = (
@@ -57,7 +57,7 @@ INSTRUCCION_CORRECCION = (
     "as ground truth for the woman's face."
 )
 RESTRICCIONES = (
-    "Constraints: no beauty-filter skin, no face slimming, no change of facial proportions, no exaggerated "
+    "Constraints: no beauty-filter skin, no face slimming, no narrower jaw or thinner cheeks than the identity reference, no change of facial proportions, no exaggerated "
     "smile, no artificial HDR, no text, no logos, no tattoos."
 )
 
