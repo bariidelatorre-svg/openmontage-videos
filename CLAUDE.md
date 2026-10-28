@@ -1,7 +1,8 @@
-# Reglas de trabajo (generación de imágenes Higgsfield)
+# Reglas de trabajo (generación de imágenes con Kie.ai)
 
-- API: `higgsfield-client` (pip) con la variable `HF_KEY`. No usar el conector MCP para generar (solo para consultar saldo/modelos).
-- Modelo por defecto: **Nano Banana Pro** (`nano_banana_pro`, 2k), siempre con las imágenes de `clientes/<clienta>/referencias/` como `image_references`.
+- API: Kie.ai con `generar_imagen.py` y la variable `KIE_API_KEY` (nunca mostrar ni commitear su valor).
+- Modelo por defecto: **Nano Banana Pro** (`nano-banana-pro`, 2K, 18 créditos/imagen), siempre con las imágenes de `clientes/<clienta>/referencias/` como `image_input`. 4K bloqueado.
+- Una imagen por ejecución, sin reintentos automáticos; el script no genera si el saldo no alcanza.
 - Cada clienta tiene su carpeta en `clientes/`. Usar sus referencias directamente: **no pedir las imágenes otra vez**.
 - **Nunca generar nada desde cero** (sin referencias o con un concepto nuevo) sin consultar antes.
 - Formato por defecto: **4:5**. Al entregar una imagen 4:5, preguntar si también se necesita en **9:16**.
@@ -12,4 +13,4 @@
 - **Identidad absoluta**: en toda imagen de una clienta se mantienen sus rasgos faciales exactos. Pueden variar maquillaje, luz y peinado, nunca los rasgos.
 - Al recrear una foto de referencia: respetar luz, cámara/encuadre, contexto, outfit y maquillaje de la referencia, con la identidad de la clienta.
 - Entrega doble: guardar cada resultado en `clientes/<clienta>/salidas/` (commit + push) **y** enviarlo en el chat para descargar.
-- Nota API: `nano-banana-pro` y `nano-banana-pro/edit` existen en la API pero devuelven `model_disabled` para esta clave (oct 2026).
+- Nota: Higgsfield se abandonó (`model_disabled` para Nano Banana Pro, oct 2026).

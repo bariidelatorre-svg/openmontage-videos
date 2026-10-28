@@ -1,106 +1,178 @@
 #!/usr/bin/env python3
-"""Genera imágenes con la API de Kie.ai (https://docs.kie.ai).
+"""Genera imágenes con Nano Banana Pro en Kie.ai (https://docs.kie.ai), manteniendo la identidad de una clienta.
 
-Flujo: crea la tarea (POST /api/v1/jobs/createTask), consulta el estado
-(GET /api/v1/jobs/recordInfo) hasta que termine y descarga el resultado en salidas/.
+Flujo: verifica el saldo -> sube las referencias de identidad (y la escena, si hay) -> crea la tarea
+-> consulta el estado hasta que termine -> descarga en clientes/<clienta>/salidas/ -> informa créditos.
 
-La API key se lee de la variable de entorno KIE_API_KEY; nunca se imprime.
+Protección de créditos:
+  - Una sola imagen por ejecución, sin reintentos automáticos.
+  - Solo 1K/2K (4K cuesta más y está bloqueado).
+  - Si el saldo no alcanza para una imagen (o quedaría por debajo de --reserva), no se genera nada.
+  - Kie.ai es prepago: cuando el saldo llega a 0 no hay cobros adicionales.
+
+La API key se lee de KIE_API_KEY; nunca se imprime.
 
 Uso:
-    python generar_imagen.py "un gato astronauta" 16:9
-    python generar_imagen.py "retrato al óleo" 1:1 --modelo z-image
+    python generar_imagen.py "recrear la escena con el mismo outfit y luz" --escena clientes/gisel/escenas/escena-01-piso-taza.jpg
+    python generar_imagen.py "retrato de estudio, fondo beige" --relacion 9:16
 """
 import argparse
 import json
+import mimetypes
 import os
 import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
+from datetime import datetime
 from pathlib import Path
 
 API_BASE = "https://api.kie.ai/api/v1"
-MODELO_POR_DEFECTO = "z-image"  # el modelo de imagen más económico de Kie.ai
-RELACIONES = ["1:1", "4:3", "3:4", "16:9", "9:16"]
-CARPETA_SALIDA = Path(__file__).resolve().parent / "salidas"
+UPLOAD_URL = "https://kieai.redpandaai.co/api/file-stream-upload"
+MODELO = "nano-banana-pro"
+COSTO_POR_IMAGEN = 18  # créditos de Nano Banana Pro en 1K/2K
+RELACIONES = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"]
+MAX_IMAGENES_INPUT = 8  # límite de la API
+RAIZ = Path(__file__).resolve().parent
+
+# Orden de prioridad de referencias de identidad (las primeras pesan más)
+REFS_PREFERIDAS = [
+    "character-sheet", "ref-frontal-neutra", "ref-natural-frontal", "ref-crema-sonrisa",
+    "ref-negro-estudio", "ref-labios-rojos-frontal", "ref-natural-mirada-arriba",
+    "ref-labios-rojos-mirada-arriba", "ref-labios-rojos-mirada-abajo",
+]
+
+INSTRUCCION_IDENTIDAD = (
+    "The woman in the generated image must be exactly the same person shown in the identity reference "
+    "images: identical facial features, face shape, eyes, eyebrows, nose, lips, skin tone and age. "
+    "Do not alter or beautify her facial features. Photorealistic, natural skin texture."
+)
+INSTRUCCION_ESCENA = (
+    "Recreate the first image (scene reference) faithfully: same camera angle, framing, lens, lighting, "
+    "background/context, pose, outfit, makeup and hairstyle, but with the woman from the other reference images."
+)
 
 
-def obtener_api_key():
+def api_key():
     key = os.environ.get("KIE_API_KEY")
     if not key:
         sys.exit("Error: la variable de entorno KIE_API_KEY no está definida.")
     return key
 
 
-def llamar_api(metodo, ruta, api_key, cuerpo=None):
-    datos = json.dumps(cuerpo).encode() if cuerpo is not None else None
-    req = urllib.request.Request(
-        f"{API_BASE}{ruta}",
-        data=datos,
-        method=metodo,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-    )
+def peticion(req):
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=120) as resp:
             respuesta = json.load(resp)
     except urllib.error.HTTPError as e:
-        sys.exit(f"Error HTTP {e.code} en {ruta}: {e.read().decode(errors='replace')}")
+        sys.exit(f"Error HTTP {e.code}: {e.read().decode(errors='replace')}")
     if respuesta.get("code") != 200:
-        sys.exit(f"Error de la API en {ruta}: {respuesta.get('code')} - {respuesta.get('msg')}")
+        sys.exit(f"Error de la API: {respuesta.get('code')} - {respuesta.get('msg')}")
     return respuesta["data"]
 
 
-def crear_tarea(api_key, modelo, prompt, relacion):
-    data = llamar_api("POST", "/jobs/createTask", api_key, {
-        "model": modelo,
-        "input": {"prompt": prompt, "aspect_ratio": relacion},
-    })
-    return data["taskId"]
+def llamar_api(metodo, ruta, key, cuerpo=None):
+    datos = json.dumps(cuerpo).encode() if cuerpo is not None else None
+    return peticion(urllib.request.Request(
+        f"{API_BASE}{ruta}", data=datos, method=metodo,
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+    ))
 
 
-def esperar_resultado(api_key, task_id, intervalo=3, timeout=600):
+def saldo(key):
+    return float(llamar_api("GET", "/chat/credit", key))
+
+
+def subir_archivo(key, ruta):
+    """Sube un archivo a Kie.ai (se borra a las 24 h) y devuelve su URL."""
+    limite = f"----kie{uuid.uuid4().hex}"
+    tipo = mimetypes.guess_type(ruta.name)[0] or "application/octet-stream"
+    nombre = f"{uuid.uuid4().hex[:8]}-{ruta.name}"
+    partes = [
+        f'--{limite}\r\nContent-Disposition: form-data; name="uploadPath"\r\n\r\nimages/referencias\r\n'.encode(),
+        f'--{limite}\r\nContent-Disposition: form-data; name="fileName"\r\n\r\n{nombre}\r\n'.encode(),
+        f'--{limite}\r\nContent-Disposition: form-data; name="file"; filename="{nombre}"\r\n'
+        f"Content-Type: {tipo}\r\n\r\n".encode() + ruta.read_bytes() + b"\r\n",
+        f"--{limite}--\r\n".encode(),
+    ]
+    data = peticion(urllib.request.Request(
+        UPLOAD_URL, data=b"".join(partes), method="POST",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": f"multipart/form-data; boundary={limite}"},
+    ))
+    return data["downloadUrl"]
+
+
+def referencias_identidad(clienta, cupo):
+    carpeta = RAIZ / "clientes" / clienta / "referencias"
+    if not carpeta.is_dir():
+        sys.exit(f"Error: no existe {carpeta}. Nunca se genera sin referencias de identidad.")
+    archivos = {p.stem: p for p in carpeta.iterdir() if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")}
+    orden = [archivos.pop(n) for n in REFS_PREFERIDAS if n in archivos] + sorted(archivos.values())
+    if not orden:
+        sys.exit(f"Error: {carpeta} no tiene imágenes de referencia.")
+    return orden[:cupo]
+
+
+def esperar_resultado(key, task_id, intervalo=4, timeout=900):
     inicio = time.time()
     while time.time() - inicio < timeout:
-        data = llamar_api("GET", f"/jobs/recordInfo?taskId={task_id}", api_key)
+        data = llamar_api("GET", f"/jobs/recordInfo?taskId={task_id}", key)
         estado = data.get("state")
         if estado == "success":
             return json.loads(data["resultJson"])["resultUrls"]
         if estado == "fail":
             sys.exit(f"La tarea falló: {data.get('failCode')} - {data.get('failMsg')}")
-        print(f"  estado: {estado}...")
         time.sleep(intervalo)
-    sys.exit(f"Tiempo de espera agotado ({timeout}s) para la tarea {task_id}.")
-
-
-def descargar(urls, task_id):
-    CARPETA_SALIDA.mkdir(exist_ok=True)
-    rutas = []
-    for i, url in enumerate(urls):
-        extension = Path(url.split("?")[0]).suffix or ".png"
-        destino = CARPETA_SALIDA / f"{task_id}_{i}{extension}"
-        urllib.request.urlretrieve(url, destino)
-        rutas.append(destino)
-    return rutas
+    sys.exit(f"Tiempo de espera agotado; revisá la tarea {task_id} antes de volver a generar.")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Genera imágenes con Kie.ai")
-    parser.add_argument("prompt", help="Descripción de la imagen (máx. 1000 caracteres)")
-    parser.add_argument("relacion", choices=RELACIONES, help="Relación de aspecto")
-    parser.add_argument("--modelo", default=MODELO_POR_DEFECTO,
-                        help=f"Modelo de Kie.ai (por defecto: {MODELO_POR_DEFECTO})")
+    parser = argparse.ArgumentParser(description="Genera una imagen con Nano Banana Pro (Kie.ai) con identidad fija")
+    parser.add_argument("prompt", help="Cambios o descripción de la escena")
+    parser.add_argument("--clienta", default="gisel", help="Carpeta en clientes/ (por defecto: gisel)")
+    parser.add_argument("--relacion", default="4:5", choices=RELACIONES, help="Relación de aspecto (por defecto 4:5)")
+    parser.add_argument("--resolucion", default="2K", choices=["1K", "2K"], help="Resolución (por defecto 2K)")
+    parser.add_argument("--escena", type=Path, help="Imagen de referencia de escena a recrear (cámara, outfit, luz...)")
+    parser.add_argument("--reserva", type=float, default=0,
+                        help="No generar si el saldo quedaría por debajo de este número de créditos")
     args = parser.parse_args()
 
-    api_key = obtener_api_key()
-    print(f"Creando tarea con el modelo {args.modelo}...")
-    task_id = crear_tarea(api_key, args.modelo, args.prompt, args.relacion)
-    print(f"Tarea creada: {task_id}")
-    urls = esperar_resultado(api_key, task_id)
-    for ruta in descargar(urls, task_id):
-        print(f"Imagen guardada en {ruta}")
+    key = api_key()
+    saldo_inicial = saldo(key)
+    if saldo_inicial - COSTO_POR_IMAGEN < args.reserva:
+        sys.exit(f"Generación cancelada: saldo {saldo_inicial:g} créditos, costo {COSTO_POR_IMAGEN}, "
+                 f"reserva {args.reserva:g}. No se gastó nada.")
+
+    rutas = []
+    if args.escena:
+        if not args.escena.is_file():
+            sys.exit(f"Error: no existe la escena {args.escena}")
+        rutas.append(args.escena)
+    rutas += referencias_identidad(args.clienta, MAX_IMAGENES_INPUT - len(rutas))
+    urls = [subir_archivo(key, r) for r in rutas]
+
+    prompt = " ".join(filter(None, [INSTRUCCION_ESCENA if args.escena else "", INSTRUCCION_IDENTIDAD, args.prompt]))
+    task_id = llamar_api("POST", "/jobs/createTask", key, {
+        "model": MODELO,
+        "input": {"prompt": prompt, "image_input": urls, "aspect_ratio": args.relacion,
+                  "resolution": args.resolucion, "output_format": "png"},
+    })["taskId"]
+    print(f"Tarea {task_id} creada ({MODELO}, {args.resolucion}, {args.relacion}, {len(urls)} referencias)")
+
+    resultado = esperar_resultado(key, task_id)
+    salida = RAIZ / "clientes" / args.clienta / "salidas"
+    salida.mkdir(parents=True, exist_ok=True)
+    marca = datetime.now().strftime("%Y%m%d-%H%M%S")
+    for i, url in enumerate(resultado):
+        destino = salida / f"{args.clienta}-{marca}-{i}{Path(url.split('?')[0]).suffix or '.png'}"
+        urllib.request.urlretrieve(url, destino)
+        print(f"Imagen: {destino.relative_to(RAIZ)}")
+        print(f"URL de descarga (Kie.ai, temporal): {url}")
+
+    saldo_final = saldo(key)
+    print(f"Créditos: {saldo_inicial:g} -> {saldo_final:g} (gastados {saldo_inicial - saldo_final:g}). "
+          f"Alcanzan para {int(saldo_final // COSTO_POR_IMAGEN)} imágenes más.")
 
 
 if __name__ == "__main__":
