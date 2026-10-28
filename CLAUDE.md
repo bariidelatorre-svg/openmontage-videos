@@ -9,3 +9,7 @@
 - Si algo falla, intentar arreglarlo primero (parámetros, prompt, código) **sin gastar créditos extra**; no reintentar generaciones a ciegas.
 - Respuestas breves y rápidas: mostrar solo el resultado, sin narrar el proceso interno.
 - Guardar resultados en `clientes/<clienta>/salidas/`.
+- **Identidad absoluta**: en toda imagen de una clienta se mantienen sus rasgos faciales exactos. Pueden variar maquillaje, luz y peinado, nunca los rasgos.
+- Al recrear una foto de referencia: respetar luz, cámara/encuadre, contexto, outfit y maquillaje de la referencia, con la identidad de la clienta.
+- Entrega doble: guardar cada resultado en `clientes/<clienta>/salidas/` (commit + push) **y** enviarlo en el chat para descargar.
+- Nota API: `nano-banana-pro` y `nano-banana-pro/edit` existen en la API pero devuelven `model_disabled` para esta clave (oct 2026).
