@@ -17,5 +17,6 @@
 - Cuerpo de Gisel: alta y voluptuosa, reloj de arena marcado (cintura definida, más busto, caderas y glúteos llenos). Pedirlo siempre en el prompt.
 - Cabello de Gisel: siempre largo (bastante más abajo de los hombros), raíz castaño oscuro que se aclara hacia las puntas en castaño cobrizo/caramelo cálido (como en ref-cabello-real-selfie y ref-aprobada-sofa-blazer). Nunca negro ni castaño plano. Liso con movimiento natural o en ondas suaves; nunca rígido. Raya al costado.
 - Al recrear una foto de referencia: respetar luz, cámara/encuadre, contexto, outfit y maquillaje de la referencia, con la identidad de la clienta.
+- Pantallas (teléfono, laptop): la IA deforma el texto; pegar la captura real encima localmente con PIL (gratis) y entregar esa versión. `--extra` pasa la captura como referencia de composición.
 - Entrega doble: guardar cada resultado en `clientes/<clienta>/salidas/` (commit + push) **y** enviarlo en el chat para descargar.
 - Nota: Higgsfield se abandonó (`model_disabled` para Nano Banana Pro, oct 2026).

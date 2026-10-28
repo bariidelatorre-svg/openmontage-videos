@@ -160,6 +160,8 @@ def main():
                         help="Imagen ya generada a corregir (solo cambia lo pedido en el prompt)")
     parser.add_argument("--tapar-cara", type=float, nargs=4, metavar=("X1", "Y1", "X2", "Y2"),
                         help="Caja de la cara en la escena (fracciones 0-1) a pixelar antes de subirla")
+    parser.add_argument("--extra", type=Path,
+                        help="Imagen adicional que debe aparecer en la escena (p. ej. la pantalla de un teléfono); va última")
     parser.add_argument("--reserva", type=float, default=0,
                         help="No generar si el saldo quedaría por debajo de este número de créditos")
     args = parser.parse_args()
@@ -172,21 +174,27 @@ def main():
 
     if args.corregir and args.escena:
         sys.exit("Error: usar --corregir o --escena, no ambos.")
-    for extra in (args.corregir, args.escena):
+    for extra in (args.corregir, args.escena, args.extra):
         if extra and not extra.is_file():
             sys.exit(f"Error: no existe {extra}")
-    rutas = referencias_identidad(args.clienta, MAX_REFS_IDENTIDAD)
+    otras = sum(1 for x in (args.corregir, args.escena, args.extra) if x)
+    rutas = referencias_identidad(args.clienta, min(MAX_REFS_IDENTIDAD, MAX_IMAGENES_INPUT - otras))
     n_identidad = len(rutas)
     if args.corregir:
         rutas.append(args.corregir)
     if args.escena:
         rutas.append(tapar_cara(args.escena, args.tapar_cara) if args.tapar_cara else args.escena)
+    if args.extra:
+        rutas.append(args.extra)
     urls = [subir_archivo(key, r) for r in rutas]
 
     prompt = " ".join(filter(None, [
         INSTRUCCION_IDENTIDAD.format(n=n_identidad),
         INSTRUCCION_CORRECCION if args.corregir else "",
-        INSTRUCCION_ESCENA if args.escena else "",
+        (INSTRUCCION_ESCENA.replace("The last image", "The second-to-last image") if args.extra
+         else INSTRUCCION_ESCENA) if args.escena else "",
+        "The very last image is additional content that must appear in the scene exactly as described below."
+        if args.extra else "",
         args.prompt,
         RESTRICCIONES,
     ]))
