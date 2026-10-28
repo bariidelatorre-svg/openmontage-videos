@@ -7,6 +7,7 @@
 - **Nunca generar nada desde cero** (sin referencias o con un concepto nuevo) sin consultar antes.
 - Formato por defecto: **4:5**. Al entregar una imagen 4:5, preguntar si también se necesita en **9:16**.
 - Después de cada generación, informar los **créditos restantes**.
+- Si una imagen sale mal, **primero corregirla** con `--corregir <imagen>` (usa la imagen fallida + character sheet + referencias y cambia solo el error); generar una nueva desde la escena solo si la corrección no es posible. La corrección debe tardar lo mismo o menos que una generación nueva: priorizar eficacia y velocidad.
 - Si algo falla, intentar arreglarlo primero (parámetros, prompt, código) **sin gastar créditos extra**; no reintentar generaciones a ciegas.
 - Respuestas breves y rápidas: mostrar solo el resultado, sin narrar el proceso interno.
 - Guardar resultados en `clientes/<clienta>/salidas/`.

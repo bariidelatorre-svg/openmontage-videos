@@ -48,6 +48,11 @@ INSTRUCCION_IDENTIDAD = (
     "images: identical facial features, face shape, eyes, eyebrows, nose, lips, skin tone and age. "
     "Do not alter or beautify her facial features. Photorealistic, natural skin texture."
 )
+INSTRUCCION_CORRECCION = (
+    "Edit the first image: keep everything exactly the same (composition, pose, background, light, outfit, "
+    "makeup, hair) and only fix what is requested below, using the other reference images (character sheet "
+    "and identity references) as ground truth for the woman's face."
+)
 INSTRUCCION_ESCENA = (
     "Recreate the first image (scene reference) faithfully: same camera angle, framing, lens, lighting, "
     "background/context, pose, outfit, makeup and hairstyle, but with the woman from the other reference images."
@@ -134,6 +139,8 @@ def main():
     parser.add_argument("--relacion", default="4:5", choices=RELACIONES, help="Relación de aspecto (por defecto 4:5)")
     parser.add_argument("--resolucion", default="2K", choices=["1K", "2K"], help="Resolución (por defecto 2K)")
     parser.add_argument("--escena", type=Path, help="Imagen de referencia de escena a recrear (cámara, outfit, luz...)")
+    parser.add_argument("--corregir", type=Path,
+                        help="Imagen ya generada a corregir (solo cambia lo pedido en el prompt)")
     parser.add_argument("--reserva", type=float, default=0,
                         help="No generar si el saldo quedaría por debajo de este número de créditos")
     args = parser.parse_args()
@@ -144,7 +151,13 @@ def main():
         sys.exit(f"Generación cancelada: saldo {saldo_inicial:g} créditos, costo {COSTO_POR_IMAGEN}, "
                  f"reserva {args.reserva:g}. No se gastó nada.")
 
+    if args.corregir and args.escena:
+        sys.exit("Error: usar --corregir o --escena, no ambos.")
     rutas = []
+    if args.corregir:
+        if not args.corregir.is_file():
+            sys.exit(f"Error: no existe {args.corregir}")
+        rutas.append(args.corregir)
     if args.escena:
         if not args.escena.is_file():
             sys.exit(f"Error: no existe la escena {args.escena}")
@@ -152,7 +165,8 @@ def main():
     rutas += referencias_identidad(args.clienta, MAX_IMAGENES_INPUT - len(rutas))
     urls = [subir_archivo(key, r) for r in rutas]
 
-    prompt = " ".join(filter(None, [INSTRUCCION_ESCENA if args.escena else "", INSTRUCCION_IDENTIDAD, args.prompt]))
+    prompt = " ".join(filter(None, [INSTRUCCION_CORRECCION if args.corregir else "",
+                                        INSTRUCCION_ESCENA if args.escena else "", INSTRUCCION_IDENTIDAD, args.prompt]))
     task_id = llamar_api("POST", "/jobs/createTask", key, {
         "model": MODELO,
         "input": {"prompt": prompt, "image_input": urls, "aspect_ratio": args.relacion,
