@@ -12,6 +12,8 @@
 - Respuestas breves y rápidas: mostrar solo el resultado, sin narrar el proceso interno.
 - Guardar resultados en `clientes/<clienta>/salidas/`.
 - **Identidad absoluta**: en toda imagen de una clienta se mantienen sus rasgos faciales exactos. Pueden variar maquillaje, luz y peinado, nunca los rasgos.
+- **Prompts (siempre en inglés, específicos pero no saturados)**: no describir la cara de la clienta (ni edad, ni rasgos); la identidad sale de las fotos. El script agrega solo el bloque 1 (identidad) y el 7 (restricciones); yo escribo los bloques 2-6: escena (qué hace y dónde), vestuario/peinado/maquillaje, composición, luz (de dónde viene), emoción (microexpresión, no sonrisa gigante) y estética fotográfica (estilo, lente). Describir rasgos solo si se quieren cambiar.
+- Identidad: solo 4 referencias neutras (character sheet primero). La foto de inspiración va al final, marcada como "no cambia la identidad", y con la cara pixelada (`--tapar-cara x1 y1 x2 y2`).
 - Al recrear una foto de referencia: respetar luz, cámara/encuadre, contexto, outfit y maquillaje de la referencia, con la identidad de la clienta.
 - Entrega doble: guardar cada resultado en `clientes/<clienta>/salidas/` (commit + push) **y** enviarlo en el chat para descargar.
 - Nota: Higgsfield se abandonó (`model_disabled` para Nano Banana Pro, oct 2026).

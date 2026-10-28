@@ -24,6 +24,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -36,27 +37,43 @@ RELACIONES = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "
 MAX_IMAGENES_INPUT = 8  # límite de la API
 RAIZ = Path(__file__).resolve().parent
 
-# Orden de prioridad de referencias de identidad (las primeras pesan más)
-REFS_PREFERIDAS = [
-    "character-sheet", "ref-frontal-neutra", "ref-natural-frontal", "ref-crema-sonrisa",
-    "ref-negro-estudio", "ref-labios-rojos-frontal", "ref-natural-mirada-arriba",
-    "ref-labios-rojos-mirada-arriba", "ref-labios-rojos-mirada-abajo",
-]
+# Referencias de identidad: pocas y neutras (las primeras pesan más)
+REFS_PREFERIDAS = ["character-sheet", "ref-frontal-neutra", "ref-natural-frontal", "ref-natural-mirada-arriba"]
+MAX_REFS_IDENTIDAD = 4
 
+# Bloque 1 (identidad) y bloque 7 (restricciones) fijos; los bloques 2-6 los da el prompt.
 INSTRUCCION_IDENTIDAD = (
-    "The woman in the generated image must be exactly the same person shown in the identity reference "
-    "images: identical facial features, face shape, eyes, eyebrows, nose, lips, skin tone and age. "
-    "Do not alter or beautify her facial features. Photorealistic, natural skin texture."
-)
-INSTRUCCION_CORRECCION = (
-    "Edit the first image: keep everything exactly the same (composition, pose, background, light, outfit, "
-    "makeup, hair) and only fix what is requested below, using the other reference images (character sheet "
-    "and identity references) as ground truth for the woman's face."
+    "Identity: the first {n} images are the identity reference. Preserve the recognizable facial features, "
+    "facial proportions, body proportions, skin tone and overall identity of the woman from the identity "
+    "reference with extremely high fidelity."
 )
 INSTRUCCION_ESCENA = (
-    "Recreate the first image (scene reference) faithfully: same camera angle, framing, lens, lighting, "
-    "background/context, pose, outfit, makeup and hairstyle, but with the woman from the other reference images."
+    "The last image is only a style/scene inspiration (pose, composition, light, outfit, setting). "
+    "It must NOT change the woman's identity: never take her face or body from it."
 )
+INSTRUCCION_CORRECCION = (
+    "The last image is the image to edit: keep everything in it exactly the same (composition, pose, "
+    "background, light, outfit, makeup, hair) and only fix what is requested, using the identity reference "
+    "as ground truth for the woman's face."
+)
+RESTRICCIONES = (
+    "Constraints: no beauty-filter skin, no face slimming, no change of facial proportions, no exaggerated "
+    "smile, no artificial HDR, no text, no logos, no tattoos."
+)
+
+
+def tapar_cara(ruta, caja):
+    """Pixela la cara de la persona en la imagen de escena para que no contamine la identidad."""
+    from PIL import Image
+    img = Image.open(ruta).convert("RGB")
+    w, h = img.size
+    x1, y1, x2, y2 = (int(v * d) for v, d in zip(caja, (w, h, w, h)))
+    zona = img.crop((x1, y1, x2, y2))
+    zona = zona.resize((max(1, (x2 - x1) // 24), max(1, (y2 - y1) // 24))).resize(zona.size, Image.NEAREST)
+    img.paste(zona, (x1, y1))
+    destino = Path(tempfile.gettempdir()) / f"escena-sin-cara-{uuid.uuid4().hex[:8]}.jpg"
+    img.save(destino, quality=92)
+    return destino
 
 
 def api_key():
@@ -141,6 +158,8 @@ def main():
     parser.add_argument("--escena", type=Path, help="Imagen de referencia de escena a recrear (cámara, outfit, luz...)")
     parser.add_argument("--corregir", type=Path,
                         help="Imagen ya generada a corregir (solo cambia lo pedido en el prompt)")
+    parser.add_argument("--tapar-cara", type=float, nargs=4, metavar=("X1", "Y1", "X2", "Y2"),
+                        help="Caja de la cara en la escena (fracciones 0-1) a pixelar antes de subirla")
     parser.add_argument("--reserva", type=float, default=0,
                         help="No generar si el saldo quedaría por debajo de este número de créditos")
     args = parser.parse_args()
@@ -153,20 +172,24 @@ def main():
 
     if args.corregir and args.escena:
         sys.exit("Error: usar --corregir o --escena, no ambos.")
-    rutas = []
+    for extra in (args.corregir, args.escena):
+        if extra and not extra.is_file():
+            sys.exit(f"Error: no existe {extra}")
+    rutas = referencias_identidad(args.clienta, MAX_REFS_IDENTIDAD)
+    n_identidad = len(rutas)
     if args.corregir:
-        if not args.corregir.is_file():
-            sys.exit(f"Error: no existe {args.corregir}")
         rutas.append(args.corregir)
     if args.escena:
-        if not args.escena.is_file():
-            sys.exit(f"Error: no existe la escena {args.escena}")
-        rutas.append(args.escena)
-    rutas += referencias_identidad(args.clienta, MAX_IMAGENES_INPUT - len(rutas))
+        rutas.append(tapar_cara(args.escena, args.tapar_cara) if args.tapar_cara else args.escena)
     urls = [subir_archivo(key, r) for r in rutas]
 
-    prompt = " ".join(filter(None, [INSTRUCCION_CORRECCION if args.corregir else "",
-                                        INSTRUCCION_ESCENA if args.escena else "", INSTRUCCION_IDENTIDAD, args.prompt]))
+    prompt = " ".join(filter(None, [
+        INSTRUCCION_IDENTIDAD.format(n=n_identidad),
+        INSTRUCCION_CORRECCION if args.corregir else "",
+        INSTRUCCION_ESCENA if args.escena else "",
+        args.prompt,
+        RESTRICCIONES,
+    ]))
     task_id = llamar_api("POST", "/jobs/createTask", key, {
         "model": MODELO,
         "input": {"prompt": prompt, "image_input": urls, "aspect_ratio": args.relacion,
