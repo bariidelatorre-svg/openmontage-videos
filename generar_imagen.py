@@ -38,7 +38,7 @@ MAX_IMAGENES_INPUT = 8  # límite de la API
 RAIZ = Path(__file__).resolve().parent
 
 # Referencias de identidad: pocas y neutras (las primeras pesan más)
-REFS_PREFERIDAS = ["ref-pro-mano-mejilla-luz", "ref-pro-mano-menton", "ref-identidad-maestra", "ref-pro-cabeza-inclinada", "ref-pro-primer-plano", "ref-aprobada-sofa-blazer", "ref-cuerpo-pasillo-vestido-cafe"]
+REFS_PREFERIDAS = ["ref-car-1-sueter-negro", "ref-car-2-sueter-crema", "ref-car-3-sofa-verde", "ref-car-4-blazer-negro", "ref-car-5-banqueta", "ref-pro-mano-mejilla-luz", "ref-pro-mano-menton", "ref-identidad-maestra", "ref-pro-cabeza-inclinada", "ref-pro-primer-plano", "ref-aprobada-sofa-blazer", "ref-cuerpo-pasillo-vestido-cafe"]
 MAX_REFS_IDENTIDAD = 7
 
 # Bloque 1 (identidad) y bloque 7 (restricciones) fijos; los bloques 2-6 los da el prompt.
